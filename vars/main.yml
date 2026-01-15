@@ -1,0 +1,32 @@
+---
+# ============================================================================
+# VARIABLES DE CONFIGURATION CLAMAV
+# ============================================================================
+
+# Serveur central pour le reporting
+central_server: "10.10.0.127"
+central_user: "ansible"
+report_dir: "/var/log/clamav-reports"
+
+# Répertoire à scanner (/ = tout le système)
+scan_directory: "/"
+
+# Planification des scans
+scan_schedule_day: "6"       # 6 = Samedi (0 = Dimanche, 1 = Lundi, etc.)
+scan_schedule_hour: "1"      # 1h00 du matin
+scan_schedule_minute: "0"    # À la minute 0
+
+# Planification des mises à jour
+update_schedule_day: "0"     # 0 = Dimanche
+update_schedule_hour: "1"    # 1h00 du matin
+update_schedule_minute: "0"  # À la minute 0
+
+# Répertoires à exclure du scan
+exclude_dirs:
+  - "^/sys"
+  - "^/proc"
+  - "^/dev"
+  - "^/run"
+
+# Options ClamAV
+clamav_options: "--recursive --infected"
