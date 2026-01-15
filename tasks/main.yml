@@ -1,0 +1,161 @@
+---
+# ============================================================================
+# INSTALLATION DE CLAMAV
+# ============================================================================
+
+- name: "📦 Mise à jour du cache APT"
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  tags: install
+
+- name: "🛡️ Installation de ClamAV et composants"
+  apt:
+    name:
+      - clamav
+      - clamav-daemon
+      - clamav-freshclam
+    state: present
+  tags: install
+
+# ============================================================================
+# CRÉATION DES RÉPERTOIRES
+# ============================================================================
+
+- name: "📁 Création du répertoire de scripts"
+  file:
+    path: /opt/clamav-automation/scripts
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  tags: config
+
+- name: "📝 Création du répertoire de logs"
+  file:
+    path: /var/log/clamav
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  tags: config
+
+# ============================================================================
+# COPIE DES SCRIPTS
+# ============================================================================
+
+- name: "📤 Copie du script de scan"
+  copy:
+    src: clamav_scan.sh
+    dest: /opt/clamav-automation/scripts/clamav_scan.sh
+    mode: '0755'
+    owner: root
+    group: root
+  tags: scripts
+
+- name: "📤 Copie du script de mise à jour"
+  copy:
+    src: clamav_update.sh
+    dest: /opt/clamav-automation/scripts/clamav_update.sh
+    mode: '0755'
+    owner: root
+    group: root
+  tags: scripts
+
+# ============================================================================
+# CONFIGURATION SSH POUR REPORTING
+# ============================================================================
+
+- name: "🔑 Génération de la clé SSH pour reporting (si inexistante)"
+  command: ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519_reporting -N ""
+  args:
+    creates: /root/.ssh/id_ed25519_reporting
+  tags: ssh
+
+- name: "📋 Récupération de la clé publique"
+  slurp:
+    src: /root/.ssh/id_ed25519_reporting.pub
+  register: ssh_public_key
+  tags: ssh
+
+- name: "🔧 Configuration SSH pour le serveur central"
+  blockinfile:
+    path: /root/.ssh/config
+    create: yes
+    mode: '0600'
+    block: |
+      Host {{ central_server }}
+        IdentityFile /root/.ssh/id_ed25519_reporting
+        StrictHostKeyChecking no
+        UserKnownHostsFile=/dev/null
+  tags: ssh
+
+- name: "📝 Affichage de la clé publique à ajouter sur le serveur central"
+  debug:
+    msg: 
+      - "════════════════════════════════════════════════════════════════"
+      - "🔑 CLÉ PUBLIQUE À AJOUTER SUR LE SERVEUR CENTRAL"
+      - "════════════════════════════════════════════════════════════════"
+      - "{{ ssh_public_key.content | b64decode }}"
+      - "════════════════════════════════════════════════════════════════"
+      - "📌 Ajoutez cette clé dans /home/ansible/.ssh/authorized_keys"
+      - "   sur le serveur {{ central_server }}"
+      - "════════════════════════════════════════════════════════════════"
+  tags: ssh
+
+# ============================================================================
+# INSTALLATION DES CRON JOBS
+# ============================================================================
+
+- name: "⏰ Installation du fichier cron depuis template"
+  template:
+    src: clamav-cron.j2
+    dest: /etc/cron.d/clamav-automation
+    mode: '0644'
+    owner: root
+    group: root
+  tags: cron
+
+# ============================================================================
+# PREMIÈRE MISE À JOUR DES SIGNATURES
+# ============================================================================
+
+- name: "🔄 Arrêt du service freshclam avant mise à jour manuelle"
+  systemd:
+    name: clamav-freshclam
+    state: stopped
+  ignore_errors: yes
+  tags: update
+
+- name: "📥 Première mise à jour des signatures ClamAV"
+  command: /opt/clamav-automation/scripts/clamav_update.sh
+  register: update_result
+  ignore_errors: yes
+  tags: update
+
+- name: "🔄 Redémarrage du service freshclam"
+  systemd:
+    name: clamav-freshclam
+    state: started
+    enabled: yes
+  ignore_errors: yes
+  tags: update
+
+# ============================================================================
+# AFFICHAGE DU RÉSUMÉ
+# ============================================================================
+
+- name: "✅ Résumé de l'installation"
+  debug:
+    msg:
+      - "════════════════════════════════════════════════════════════════"
+      - "✅ ClamAV installé et configuré avec succès sur {{ ansible_hostname }}"
+      - "════════════════════════════════════════════════════════════════"
+      - "📂 Scripts : /opt/clamav-automation/scripts/"
+      - "📝 Logs : /var/log/clamav/"
+      - "🛡️ Scan : Samedi à {{ scan_schedule_hour }}h00"
+      - "🔄 Mise à jour : Dimanche à {{ update_schedule_hour }}h00"
+      - "📊 Reporting : {{ central_server }}"
+      - "🖥️  IP : {{ ansible_default_ipv4.address }}"
+      - "════════════════════════════════════════════════════════════════"
+  tags: always
